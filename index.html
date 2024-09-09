@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Application</title>
+    <style>
+        #chat-container {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+
+        #messages {
+            list-style: none;
+            padding: 0;
+        }
+
+        #messages li {
+            margin-bottom: 5px;
+        }
+
+        #input-container {
+            display: flex;
+            align-items: center;
+        }
+
+        #username, #message {
+            padding: 5px;
+            border: 1px solid #ccc;
+        }
+
+        #send-button {
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <ul id="messages"></ul>
+    </div>
+    <div id="input-container">
+        <input type="text" id="username" placeholder="Username">
+        <input type="text" id="message" placeholder="Message">
+        <button id="send-button">Send</button>
+    </div>
+    <script>
+        const socket = new WebSocket('ws://localhost:8080/ws');
+
+        const usernameInput = document.getElementById('username');
+        const messageInput = document.getElementById('message');
+        const sendButton = document.getElementById('send-button');   
+
+        const messagesList = document.getElementById('messages');
+
+        function displayMessage(message) {
+            const li = document.createElement('li');
+            li.textContent = `${message.username}: ${message.message}`;
+            messagesList.appendChild(li);
+        }
+
+        sendButton.addEventListener('click', () => {
+            const username = usernameInput.value;
+            const message = messageInput.value;
+
+            if (username && message)   
+ {
+                const data = { username, message };
+                socket.send(JSON.stringify(data));
+                messageInput.value = '';
+            }
+        });
+
+        socket.addEventListener('message', (event) => {
+            const data = JSON.parse(event.data);
+            displayMessage(data);
+        });
+    </script>
+</body>
+</html>
