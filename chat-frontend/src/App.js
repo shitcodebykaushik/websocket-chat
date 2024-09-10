@@ -51,7 +51,11 @@ const App = () => {
                 console.log('WebSocket connection closed');
             };
 
-            return () => ws.close();
+            return () => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                }
+            };
         }
     }, [showPage, socket]);
 
