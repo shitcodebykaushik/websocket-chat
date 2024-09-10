@@ -195,8 +195,7 @@ func handleMessages() {
 
         mu.Lock()
         for client := range clients {
-            err := client.WriteJSON(msg)
-            if err != nil {
+            if err := client.WriteJSON(msg); err != nil {
                 fmt.Println("Error while writing message:", err)
                 client.Close()
                 delete(clients, client)
@@ -205,6 +204,7 @@ func handleMessages() {
         mu.Unlock()
     }
 }
+
 
 func saveMessageToDB(msg Message) {
     _, err := messagesCollection.InsertOne(context.TODO(), bson.M{
