@@ -1,29 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 const Chat = ({ username, socket, setMessage, message }) => {
     const [newMessage, setNewMessage] = useState('');
 
-    // Handle message sending
-    const handleSendMessage = (e) => {
+    const messageObject = useMemo(() => ({
+        username,
+        message: newMessage,
+        'user-id': username
+    }), [username, newMessage]);
+
+    const handleSendMessage = useCallback((e) => {
         e.preventDefault();
         if (socket) {
-            socket.send(JSON.stringify({
-                username,
-                message: newMessage,
-                'user-id': username
-            }));
+            socket.send(JSON.stringify(messageObject));
             setNewMessage('');
         }
-    };
+    }, [socket, messageObject]);
 
-    // Handle received messages
+    const handleMessage = useCallback((event) => {
+        const msg = JSON.parse(event.data);
+        console.log('Received message:', msg); // Debug log
+        setMessage(prev => `${prev}\n${msg.username}: ${msg.message}`);
+    }, [setMessage]);
+
     useEffect(() => {
         if (socket) {
-            socket.onmessage = (event) => {
-                const msg = JSON.parse(event.data);
-                console.log('Received message:', msg); // Debug log
-                setMessage(prev => `${prev}\n${msg.username}: ${msg.message}`);
-            };
+            socket.onmessage = handleMessage;
 
             socket.onerror = (error) => {
                 console.error('WebSocket error:', error);
@@ -33,9 +35,12 @@ const Chat = ({ username, socket, setMessage, message }) => {
                 console.log('WebSocket connection closed');
             };
 
-            return () => socket.close();
+            return () => {
+                socket.onmessage = null;
+                socket.close();
+            };
         }
-    }, [socket]);
+    }, [socket, handleMessage]);
 
     return (
         <div>
