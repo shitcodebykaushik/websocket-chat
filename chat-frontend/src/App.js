@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Register from './Register';
 import Chat from './Chat';
@@ -8,28 +8,10 @@ const App = () => {
     const [showPage, setShowPage] = useState('home'); // 'home', 'login', 'register', 'chat'
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [message, setMessage] = useState('');
     const [socket, setSocket] = useState(null);
 
-    useEffect(() => {
-        const checkLogin = async () => {
-            try {
-                const res = await axios.get('/login/check');
-                if (res.status === 200) {
-                    setShowPage('chat');
-                } else {
-                    setShowPage('home');
-                }
-            } catch (error) {
-                setShowPage('home');
-            }
-        };
-
-        checkLogin();
-    }, []);
-
-    useEffect(() => {
-        if (showPage === 'chat' && !socket) {
+    const connectWebSocket = useCallback(() => {
+        if (!socket) {
             const ws = new WebSocket('ws://localhost:8080/ws');
             setSocket(ws);
 
@@ -39,8 +21,8 @@ const App = () => {
 
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
-                console.log('Received message:', msg); // Debug log
-                setMessage(prev => `${prev}\n${msg.username}: ${msg.message}`);
+                console.log('Received message:', msg);
+                setSocket(ws);
             };
 
             ws.onerror = (error) => {
@@ -49,15 +31,22 @@ const App = () => {
 
             ws.onclose = () => {
                 console.log('WebSocket connection closed');
-            };
-
-            return () => {
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.close();
-                }
+                setSocket(null);
             };
         }
-    }, [showPage, socket]);
+    }, [socket]);
+
+    useEffect(() => {
+        if (showPage === 'chat') {
+            connectWebSocket();
+        }
+
+        return () => {
+            if (socket) {
+                socket.close();
+            }
+        };
+    }, [showPage, connectWebSocket, socket]);
 
     const handleLogin = async () => {
         try {
@@ -81,7 +70,7 @@ const App = () => {
 
     return (
         <div>
-            <h1>Chat Application</h1>
+            <h1>Broadcast channel</h1>
             {showPage === 'home' && (
                 <div>
                     <button onClick={() => setShowPage('login')}>Login</button>
@@ -104,8 +93,6 @@ const App = () => {
                 <Chat
                     username={username}
                     socket={socket}
-                    setMessage={setMessage}
-                    message={message}
                 />
             )}
         </div>

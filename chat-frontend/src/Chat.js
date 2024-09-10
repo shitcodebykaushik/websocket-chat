@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
-const Chat = ({ username, socket, message, setMessage }) => {
+const Chat = ({ username, socket }) => {
     const [input, setInput] = useState('');
+    const [messages, setMessages] = useState('');
 
     const sendMessage = () => {
         if (socket && input.trim()) {
@@ -12,9 +13,7 @@ const Chat = ({ username, socket, message, setMessage }) => {
             socket.send(JSON.stringify(msg));
             setInput('');  // Clear input after sending
         } else {
-            // Add error handling for empty message or missing socket
             console.error('Cannot send empty message or socket is not connected.');
-            // Display a message to the user about the issue
         }
     };
 
@@ -22,16 +21,16 @@ const Chat = ({ username, socket, message, setMessage }) => {
         if (socket) {
             socket.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
-                setMessage(prev => `${prev}\n${msg.username}: ${msg.message}`);
+                setMessages(prev => `${prev}\n${msg.username} [${msg.ip}]: ${msg.message}`);
             };
         }
-    }, [socket, setMessage]);
+    }, [socket]);
 
     return (
         <div style={{ backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)' }}>
             <h2>Chat as {username}</h2>
             <div style={{ backgroundColor: '#fff', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
-                <textarea value={message} readOnly style={{ width: '100%', minHeight: '150px', padding: '5px' }} />
+                <textarea value={messages} readOnly style={{ width: '100%', minHeight: '150px', padding: '5px' }} />
             </div>
             <input
                 type="text"
