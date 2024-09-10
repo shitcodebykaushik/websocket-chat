@@ -31,9 +31,11 @@ var usersCollection *mongo.Collection
 var messagesCollection *mongo.Collection
 
 type Message struct {
-	Username string `json:"username"`
-	Message  string `json:"message"`
-	UserId   string `json:"user-id"`
+	Username  string    `json:"username"`
+	Message   string    `json:"message"`
+	UserId    string    `json:"user-id"`
+	Timestamp string    `json:"timestamp"`
+	IP        string    `json:"ip"`
 }
 
 type User struct {
@@ -44,6 +46,10 @@ type User struct {
 func hashPassword(password string) string {
 	hash := sha256.Sum256([]byte(password))
 	return hex.EncodeToString(hash[:])
+}
+
+func formatTimestamp(ts time.Time) string {
+	return ts.Format("2006-01-02 15:04:05")
 }
 
 func main() {
@@ -172,6 +178,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	clients[conn] = username
 	mu.Unlock()
 
+	// Extract the IP address
+	ipAddress := r.RemoteAddr
+
+	// Send old messages to the new user
+	sendOldMessages(conn, ipAddress)
+
 	for {
 		var msg Message
 		err := conn.ReadJSON(&msg)
@@ -185,10 +197,36 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		msg.Username = username
 		msg.UserId = username
+		msg.Timestamp = formatTimestamp(time.Now())
+		msg.IP = ipAddress
 
 		saveMessageToDB(msg)
 
 		broadcast <- msg
+	}
+}
+
+func sendOldMessages(conn *websocket.Conn, ipAddress string) {
+	// Fetch old messages from the database with a limit
+	cursor, err := messagesCollection.Find(context.TODO(), bson.M{}, options.Find().SetLimit(100).SetSort(bson.M{"timestamp": -1}))
+	if err != nil {
+		fmt.Println("Error fetching old messages:", err)
+		return
+	}
+	defer cursor.Close(context.TODO())
+
+	var messages []Message
+	if err := cursor.All(context.TODO(), &messages); err != nil {
+		fmt.Println("Error decoding old messages:", err)
+		return
+	}
+
+	// Send old messages to the new user
+	for _, msg := range messages {
+		if err := conn.WriteJSON(msg); err != nil {
+			fmt.Println("Error while sending old message:", err)
+			return
+		}
 	}
 }
 
@@ -216,7 +254,8 @@ func saveMessageToDB(msg Message) {
 		"username":  msg.Username,
 		"message":   msg.Message,
 		"user-id":   msg.UserId,
-		"timestamp": time.Now(),
+		"timestamp": msg.Timestamp,
+		"ip":        msg.IP,
 	})
 	if err != nil {
 		fmt.Println("Error saving message to DB:", err)

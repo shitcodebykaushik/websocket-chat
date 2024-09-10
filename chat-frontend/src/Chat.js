@@ -1,66 +1,46 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const Chat = ({ username, socket, setMessage, message }) => {
-    const [newMessage, setNewMessage] = useState('');
+const Chat = ({ username, socket, message, setMessage }) => {
+    const [input, setInput] = useState('');
 
-    const messageObject = useMemo(() => ({
-        username,
-        message: newMessage,
-        'user-id': username
-    }), [username, newMessage]);
-
-    const handleSendMessage = useCallback((e) => {
-        e.preventDefault();
-        if (socket) {
-            socket.send(JSON.stringify(messageObject));
-            setNewMessage('');
+    const sendMessage = () => {
+        if (socket && input.trim()) {
+            const msg = {
+                username: username,
+                message: input,
+            };
+            socket.send(JSON.stringify(msg));
+            setInput('');  // Clear input after sending
+        } else {
+            // Add error handling for empty message or missing socket
+            console.error('Cannot send empty message or socket is not connected.');
+            // Display a message to the user about the issue
         }
-    }, [socket, messageObject]);
-
-    const handleMessage = useCallback((event) => {
-        const msg = JSON.parse(event.data);
-        console.log('Received message:', msg); // Debug log
-        setMessage(prev => `${prev}\n${msg.username}: ${msg.message}`);
-    }, [setMessage]);
+    };
 
     useEffect(() => {
         if (socket) {
-            socket.onmessage = handleMessage;
-
-            socket.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-
-            socket.onclose = () => {
-                console.log('WebSocket connection closed');
-            };
-
-            return () => {
-                socket.onmessage = null;
-                socket.close();
+            socket.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                setMessage(prev => `${prev}\n${msg.username}: ${msg.message}`);
             };
         }
-    }, [socket, handleMessage]);
+    }, [socket, setMessage]);
 
     return (
-        <div>
-            <h2>Chat Room</h2>
-            <form onSubmit={handleSendMessage}>
-                <input
-                    type="text"
-                    placeholder="Type your message here"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                />
-                <button type="submit">Send Message</button>
-            </form>
-            <textarea
-                readOnly
-                value={message}
-                rows="10"
-                cols="50"
-                style={{ width: '100%' }}
-            ></textarea>
+        <div style={{ backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)' }}>
+            <h2>Chat as {username}</h2>
+            <div style={{ backgroundColor: '#fff', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
+                <textarea value={message} readOnly style={{ width: '100%', minHeight: '150px', padding: '5px' }} />
+            </div>
+            <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type your message..."
+                style={{ width: '100%', padding: '5px', marginBottom: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
+            />
+            <button style={{ padding: '5px 10px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }} onClick={sendMessage}>Send</button>
         </div>
     );
 };
