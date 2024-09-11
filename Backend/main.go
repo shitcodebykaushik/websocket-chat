@@ -29,6 +29,7 @@ var mu sync.Mutex
 var mongoClient *mongo.Client
 var usersCollection *mongo.Collection
 var messagesCollection *mongo.Collection
+var sosCollection *mongo.Collection // Dedicated SOS collection
 
 type Message struct {
 	Username  string    `json:"username"`
@@ -36,6 +37,7 @@ type Message struct {
 	UserId    string    `json:"user-id"`
 	Timestamp string    `json:"timestamp"`
 	IP        string    `json:"ip"`
+	IsSOS     bool      `json:"is_sos"` // New field to indicate if this is an SOS alert
 }
 
 type User struct {
@@ -53,6 +55,7 @@ func formatTimestamp(ts time.Time) string {
 }
 
 func main() {
+	// MongoDB connection setup
 	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -66,15 +69,19 @@ func main() {
 		panic("Error pinging MongoDB: " + err.Error())
 	}
 
+	// Initialize MongoDB collections
 	usersCollection = mongoClient.Database("chatdb").Collection("users")
 	messagesCollection = mongoClient.Database("chatdb").Collection("messages")
+	sosCollection = mongoClient.Database("chatdb").Collection("sos_alerts") // SOS collection
 
+	// HTTP Handlers
 	http.HandleFunc("/", homePage)
 	http.HandleFunc("/ws", handleConnections)
 	http.HandleFunc("/register", handleRegister)
 	http.HandleFunc("/login", handleLogin)
 	http.HandleFunc("/login/check", checkLogin)
 
+	// Message handler goroutine
 	go handleMessages()
 
 	fmt.Println("Server started on :8080")
@@ -85,7 +92,7 @@ func main() {
 }
 
 func homePage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Welcome to the Chat Room!")
+	fmt.Fprintf(w, "Welcome to the SOS Alert System!")
 }
 
 func handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -157,13 +164,14 @@ func checkLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {
+	// Get the username from the cookie
 	cookie, err := r.Cookie("username")
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	username := cookie.Value
+	username := cookie.Value // Assign username from cookie
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -172,10 +180,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	fmt.Println("User connected:", username)
-
+	// Add the connected user to the clients map
 	mu.Lock()
-	clients[conn] = username
+	clients[conn] = username // Use the username in the map
 	mu.Unlock()
 
 	// Extract the IP address
@@ -195,14 +202,18 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		msg.Username = username
+		// Populate the message with relevant details
+		msg.Username = username // Use the username here
 		msg.UserId = username
 		msg.Timestamp = formatTimestamp(time.Now())
 		msg.IP = ipAddress
 
-		saveMessageToDB(msg)
-
-		broadcast <- msg
+		if msg.IsSOS {
+			handleSOSAlert(msg)
+		} else {
+			saveMessageToDB(msg)
+			broadcast <- msg
+		}
 	}
 }
 
@@ -256,8 +267,38 @@ func saveMessageToDB(msg Message) {
 		"user-id":   msg.UserId,
 		"timestamp": msg.Timestamp,
 		"ip":        msg.IP,
+		"is_sos":    msg.IsSOS,
 	})
 	if err != nil {
 		fmt.Println("Error saving message to DB:", err)
 	}
+}
+
+func handleSOSAlert(msg Message) {
+	// Save SOS alert to a dedicated collection
+	_, err := sosCollection.InsertOne(context.TODO(), bson.M{
+		"username":  msg.Username,
+		"message":   msg.Message,
+		"user-id":   msg.UserId,
+		"timestamp": msg.Timestamp,
+		"ip":        msg.IP,
+		"is_sos":    true,
+	})
+	if err != nil {
+		fmt.Println("Error saving SOS message to DB:", err)
+		return
+	}
+
+	// Broadcast SOS to all connected clients
+	fmt.Printf("SOS Alert from %s: %s\n", msg.Username, msg.Message)
+
+	mu.Lock()
+	for client, username := range clients {
+		if err := client.WriteJSON(msg); err != nil {
+			fmt.Println("Error while sending SOS message to", username, ":", err)
+			client.Close()
+			delete(clients, client)
+		}
+	}
+	mu.Unlock()
 }
